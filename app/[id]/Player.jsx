@@ -4,12 +4,30 @@ import { useRef, useState, useEffect } from "react";
 import "plyr/dist/plyr.css"; // safe to import CSS
 // ❌ don't import Plyr at the top — causes SSR error
 
-export default function Player({ songData }) {
+export default function Player({ songData, mainColor = "#888" }) {
   const [isFavorite, setIsFavorite] = useState(false);
   const audioRef = useRef(null);
   const playerRef = useRef(null);
 
   const { songUrl, downloadUrl, title, artist, album, artwork } = songData;
+
+  // Helper function to adjust color brightness
+  function adjustColor(color, amount) {
+    const usePound = color[0] === "#";
+    const col = usePound ? color.slice(1) : color;
+    const num = parseInt(col, 16);
+    let r = (num >> 16) + amount;
+    let g = (num >> 8 & 0x00FF) + amount;
+    let b = (num & 0x0000FF) + amount;
+
+    // Ensure values stay within valid range
+    r = Math.max(0, Math.min(255, r));
+    g = Math.max(0, Math.min(255, g));
+    b = Math.max(0, Math.min(255, b));
+
+    // Convert back to hex
+    return (usePound ? "#" : "") + (r << 16 | g << 8 | b).toString(16).padStart(6, "0");
+  }
 
   useEffect(() => {
     // ✅ dynamically import Plyr on client only
@@ -31,7 +49,15 @@ export default function Player({ songData }) {
           ],
           loadSprite: true,
           iconUrl: "https://cdn.plyr.io/3.7.8/plyr.svg",
+          autoplay: true, // Enable autoplay
         });
+
+        // Try to play the audio after a short delay to ensure it's loaded
+        setTimeout(() => {
+          if (playerRef.current) {
+            playerRef.current.play().catch(e => console.log("Autoplay failed:", e));
+          }
+        }, 100);
       }
     });
 
@@ -39,6 +65,11 @@ export default function Player({ songData }) {
     const style = document.createElement("style");
     style.innerHTML = `
       .plyr {
+        background-color: #111 !important;
+        border-radius: 12px !important;
+        border: 1px solid #222 !important;
+      }
+
       .plyr--audio {
         background-color: #111 !important;
         border-radius: 12px !important;
@@ -46,6 +77,7 @@ export default function Player({ songData }) {
       }
 
       .plyr__controls {
+        background-color: #1a1a1a !important;
         color: #fff !important;
       }
 
@@ -58,8 +90,28 @@ export default function Player({ songData }) {
         background: rgba(255,255,255,0.1) !important;
       }
 
+      .plyr__progress {
+        background: transparent !important;
+      }
+
+      .plyr__progress input[type="range"] {
+        color: ${mainColor} !important; /* For WebKit browsers */
+      }
+
       .plyr__progress input[type="range"]::-webkit-slider-thumb {
-        background: #fff !important;
+        background: ${mainColor} !important;
+      }
+
+      .plyr__progress input[type="range"]::-moz-range-thumb {
+        background: ${mainColor} !important;
+      }
+
+      .plyr__progress input[type="range"]::-webkit-slider-thumb:hover {
+        background: ${adjustColor(mainColor, -20)} !important;
+      }
+
+      .plyr__progress input[type="range"]::-moz-range-thumb:hover {
+        background: ${adjustColor(mainColor, -20)} !important;
       }
 
       .plyr__progress__buffer {
@@ -67,11 +119,78 @@ export default function Player({ songData }) {
       }
 
       .plyr__progress--played {
-        background: #888 !important;
+        background: ${mainColor} !important;
+      }
+
+      /* Make sure the played section has higher z-index to be visible */
+      .plyr__progress--played,
+      .plyr__volume--display {
+        z-index: 9 !important;
       }
 
       .plyr__time {
         color: #ccc !important;
+      }
+
+      .plyr__volume {
+        background: transparent !important;
+      }
+
+      .plyr__volume input[type="range"] {
+        color: ${mainColor} !important;
+      }
+
+      .plyr__volume input[type="range"]::-webkit-slider-thumb {
+        background: ${mainColor} !important;
+      }
+
+      .plyr__volume input[type="range"]::-moz-range-thumb {
+        background: ${mainColor} !important;
+      }
+
+      .plyr__volume input[type="range"]::-webkit-slider-thumb:hover {
+        background: ${adjustColor(mainColor, -20)} !important;
+      }
+
+      .plyr__volume input[type="range"]::-moz-range-thumb:hover {
+        background: ${adjustColor(mainColor, -20)} !important;
+      }
+
+      .plyr__menu__container {
+        background: #1a1a1a !important;
+        border: 1px solid #333 !important;
+      }
+
+      .plyr__menu__container .plyr__control {
+        color: #fff !important;
+      }
+
+      .plyr__menu__container .plyr__control:hover,
+      .plyr__menu__container .plyr__control:focus {
+        background: rgba(255,255,255,0.2) !important;
+      }
+
+      .plyr__tooltip {
+        background: #333 !important;
+        color: #fff !important;
+      }
+
+      .plyr__control--overlaid {
+        background: ${mainColor} !important;
+      }
+
+      .plyr__control--overlaid:hover,
+      .plyr__control--overlaid:focus {
+        background: ${adjustColor(mainColor, -20)} !important;
+      }
+
+      .plyr [data-plyr='play'] {
+        background: ${mainColor} !important;
+      }
+
+      .plyr [data-plyr='play']:hover,
+      .plyr [data-plyr='play']:focus {
+        background: ${adjustColor(mainColor, -20)} !important;
       }
     `;
     document.head.appendChild(style);
@@ -114,7 +233,7 @@ export default function Player({ songData }) {
         {/* Controls */}
         <div className="flex items-center justify-center space-x-6 mb-8">
           {/* Favorite */}
-          <button
+          {/* <button
             onClick={() => setIsFavorite(!isFavorite)}
             className={`${
               isFavorite ? "text-pink-500" : "text-gray-400"
@@ -134,7 +253,7 @@ export default function Player({ songData }) {
                 d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"
               />
             </svg>
-          </button>
+          </button> */}
 
           {/* Download */}
           <a
@@ -144,7 +263,7 @@ export default function Player({ songData }) {
           >
             <svg
               xmlns="http://www.w3.org/2000/svg"
-              className="h-6 w-6"
+              className="h-12 w-12"
               fill="none"
               viewBox="0 0 24 24"
               stroke="currentColor"
