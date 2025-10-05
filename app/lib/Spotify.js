@@ -29,6 +29,25 @@ async function getAccessToken() {
   }
 }
 
+// Function to get track details
+
+export async function getTrack(trackId) {
+  const token = await getAccessToken();
+
+  try {
+    const response = await axios.get(`https://api.spotify.com/v1/tracks/${trackId}`, {
+      headers: {
+        'Authorization': `Bearer ${token}`
+      }
+    });
+
+    return response.data
+  } catch (error) {
+    console.error('Error fetching track:', error.response?.data || error.message);
+  }
+}
+
+
 // Function to search for tracks
 export default async function searchTrack(query) {
   const token = await getAccessToken();
