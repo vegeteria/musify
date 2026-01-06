@@ -121,95 +121,101 @@ export default function Player({ songData, mainColor = "#888" }) {
         </div>
 
         {/* Controls */}
-        <div className="flex items-center justify-center gap-4 md:gap-6 mt-6 flex-wrap">
-          {/* Rewind 10s */}
-          <button
-            onClick={() => {
-              const current = playerRef.current.seek();
-              playerRef.current.seek(Math.max(0, current - 10));
-            }}
-            className="p-2 rounded-full text-gray-300 hover:text-white hover:bg-gray-700 transition-colors"
-            aria-label="Rewind 10 seconds"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-7 w-7" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M10.545 16.849l-4.752-3.564a1 1 0 0 1 0-1.57l4.752-3.564A1 1 0 0 1 12 8.936v7.128a1 1 0 0 1-1.455.885z"></path>
-              <path d="M17.545 16.849l-4.752-3.564a1 1 0 0 1 0-1.57l4.752-3.564A1 1 0 0 1 19 8.936v7.128a1 1 0 0 1-1.455.885z"></path>
-            </svg>
-          </button>
-
-          {/* Play / Pause */}
-          <button
-            onClick={() => setPlaying(!playing)}
-            className="rounded-full bg-white text-black p-3 mx-2 shadow-lg hover:scale-105 transition-transform"
-            aria-label={playing ? 'Pause' : 'Play'}
-          >
-            {playing ? (
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M8 6h3v12H8V6zm5 0h3v12h-3V6z"></path>
-              </svg>
-            ) : (
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M7 6v12l10-6z"></path>
-              </svg>
-            )}
-          </button>
-
-          {/* Forward 10s */}
-          <button
-            onClick={() => {
-              const current = playerRef.current.seek();
-              playerRef.current.seek(Math.min(duration, current + 10));
-            }}
-            className="p-2 rounded-full text-gray-300 hover:text-white hover:bg-gray-700 transition-colors"
-            aria-label="Forward 10 seconds"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-7 w-7" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M13.455 16.849a1 1 0 0 1-1.455-.885V8.036a1 1 0 0 1 1.455-.885l4.752 3.564a1 1 0 0 1 0 1.57l-4.752 3.564z"></path>
-              <path d="M6.455 16.849a1 1 0 0 1-1.455-.885V8.036a1 1 0 0 1 1.455-.885l4.752 3.564a1 1 0 0 1 0 1.57l-4.752 3.564z"></path>
-            </svg>
-          </button>
-
-          {/* Volume Control */}
-          <div className="flex items-center gap-2">
+        <div className="mt-6 space-y-4">
+          {/* Playback Controls */}
+          <div className="flex items-center justify-center gap-4 md:gap-6">
+            {/* Rewind 10s */}
             <button
-              onClick={() => setMuted(!muted)}
+              onClick={() => {
+                const current = playerRef.current.seek();
+                playerRef.current.seek(Math.max(0, current - 10));
+              }}
               className="p-2 rounded-full text-gray-300 hover:text-white hover:bg-gray-700 transition-colors"
-              aria-label={muted ? 'Unmute' : 'Mute'}
+              aria-label="Rewind 10 seconds"
             >
-              {muted || volume === 0 ? (
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" viewBox="0 0 24 24" fill="currentColor">
-                  <path d="M16.5 12A4.5 4.5 0 0 0 14 7.96v8.08A4.5 4.5 0 0 0 16.5 12zM12 4l-4 4H4v8h4l4 4V4zm8.91 3.09L19.5 8.5l-1.41-1.41L16.67 8.5 18.09 9.91 19.5 8.5l1.41 1.41-1.41 1.42 1.41 1.41-1.41 1.42-1.42-1.42-1.41 1.42 1.41 1.41 1.42-1.41 1.41 1.41 1.41-1.41-1.41-1.42 1.41-1.41z"></path>
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-7 w-7" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M10.545 16.849l-4.752-3.564a1 1 0 0 1 0-1.57l4.752-3.564A1 1 0 0 1 12 8.936v7.128a1 1 0 0 1-1.455.885z"></path>
+                <path d="M17.545 16.849l-4.752-3.564a1 1 0 0 1 0-1.57l4.752-3.564A1 1 0 0 1 19 8.936v7.128a1 1 0 0 1-1.455.885z"></path>
+              </svg>
+            </button>
+
+            {/* Play / Pause */}
+            <button
+              onClick={() => setPlaying(!playing)}
+              className="rounded-full bg-white text-black p-3 mx-2 shadow-lg hover:scale-105 transition-transform"
+              aria-label={playing ? 'Pause' : 'Play'}
+            >
+              {playing ? (
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M8 6h3v12H8V6zm5 0h3v12h-3V6z"></path>
                 </svg>
               ) : (
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" viewBox="0 0 24 24" fill="currentColor">
-                  <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3A4.5 4.5 0 0 0 14 7.97v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"></path>
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M7 6v12l10-6z"></path>
                 </svg>
               )}
             </button>
-            <input
-              type="range"
-              min="0"
-              max="1"
-              step="0.01"
-              value={muted ? 0 : volume}
-              onChange={handleVolumeChange}
-              className="w-24 cursor-pointer"
-              style={{ accentColor: mainColor }}
-              aria-label="Volume"
-            />
+
+            {/* Forward 10s */}
+            <button
+              onClick={() => {
+                const current = playerRef.current.seek();
+                playerRef.current.seek(Math.min(duration, current + 10));
+              }}
+              className="p-2 rounded-full text-gray-300 hover:text-white hover:bg-gray-700 transition-colors"
+              aria-label="Forward 10 seconds"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-7 w-7" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M13.455 16.849a1 1 0 0 1-1.455-.885V8.036a1 1 0 0 1 1.455-.885l4.752 3.564a1 1 0 0 1 0 1.57l-4.752 3.564z"></path>
+                <path d="M6.455 16.849a1 1 0 0 1-1.455-.885V8.036a1 1 0 0 1 1.455-.885l4.752 3.564a1 1 0 0 1 0 1.57l-4.752 3.564z"></path>
+              </svg>
+            </button>
           </div>
 
-          {/* Download */}
-          <a
-            href={downloadUrl}
-            download
-            className="p-2 rounded-full text-gray-300 hover:text-white hover:bg-gray-700 transition-colors"
-            aria-label="Download song"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-7 w-7" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm-1-13h2v5h3l-4 4-4-4h3V7z"></path>
-            </svg>
-          </a>
+          {/* Volume and Download Controls */}
+          <div className="flex items-center justify-center gap-4">
+            {/* Volume Control */}
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setMuted(!muted)}
+                className="p-2 rounded-full text-gray-300 hover:text-white hover:bg-gray-700 transition-colors"
+                aria-label={muted ? 'Unmute' : 'Mute'}
+              >
+                {muted || volume === 0 ? (
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M16.5 12A4.5 4.5 0 0 0 14 7.96v8.08A4.5 4.5 0 0 0 16.5 12zM12 4l-4 4H4v8h4l4 4V4zm8.91 3.09L19.5 8.5l-1.41-1.41L16.67 8.5 18.09 9.91 19.5 8.5l1.41 1.41-1.41 1.42 1.41 1.41-1.41 1.42-1.42-1.42-1.41 1.42 1.41 1.41 1.42-1.41 1.41 1.41 1.41-1.41-1.41-1.42 1.41-1.41z"></path>
+                  </svg>
+                ) : (
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3A4.5 4.5 0 0 0 14 7.97v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"></path>
+                  </svg>
+                )}
+              </button>
+              <input
+                type="range"
+                min="0"
+                max="1"
+                step="0.01"
+                value={muted ? 0 : volume}
+                onChange={handleVolumeChange}
+                className="w-24 cursor-pointer"
+                style={{ accentColor: mainColor }}
+                aria-label="Volume"
+              />
+            </div>
+
+            {/* Download */}
+            <a
+              href={downloadUrl}
+              download
+              className="p-2 rounded-full text-gray-300 hover:text-white hover:bg-gray-700 transition-colors"
+              aria-label="Download song"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-7 w-7" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm-1-13h2v5h3l-4 4-4-4h3V7z"></path>
+              </svg>
+            </a>
+          </div>
         </div>
       </div>
     </div>

@@ -1,7 +1,7 @@
 // app/song/[id]/page.jsx
-import Link from 'next/link';
 import { getTrack } from '../lib/Spotify';
 import Player from './Player';
+import BackButton from './BackButton';
 
 export default async function SongPage({ params }) {
   const { id: songId } = await params;
@@ -23,14 +23,7 @@ export default async function SongPage({ params }) {
     <div className="min-h-screen bg-black text-white p-4 sm:p-6 md:p-8">
       <div className="max-w-6xl mx-auto">
         <div className="mb-8">
-          <Link href="/">
-          <button className="flex items-center text-gray-400 hover:text-white transition-colors">
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
-            </svg>
-            Back
-          </button>
-          </Link>
+          <BackButton />
         </div>
 
         {/* Pass props to the Client Component */}
