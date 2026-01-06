@@ -3,10 +3,16 @@
 import { useEffect, useRef, useState } from "react";
 import ReactHowler from "react-howler";
 
-export default function Player({ songData, mainColor = "#888" }) {
+import axios from "axios";
+
+export default function Player({ songData, mainColor = "#888", initialCached = false, trackId }) {
   const { songUrl, downloadUrl, title, artist, album, artwork } = songData;
 
-  const [playing, setPlaying] = useState(true);
+  const [playing, setPlaying] = useState(false);
+  const [downloadStatus, setDownloadStatus] = useState(initialCached ? "cached" : "idle");
+  const [progress, setProgress] = useState(0);
+  const [statusMessage, setStatusMessage] = useState("");
+
   const [seek, setSeek] = useState(0);
   const [duration, setDuration] = useState(0);
   const [isSeeking, setIsSeeking] = useState(false);
@@ -14,11 +20,97 @@ export default function Player({ songData, mainColor = "#888" }) {
   const [muted, setMuted] = useState(false);
 
   const playerRef = useRef(null);
+  const pollInterval = useRef(null);
+
+  // 🚀 Start Download process if not cached
+  useEffect(() => {
+    if (initialCached) {
+      setDownloadStatus("cached");
+      setPlaying(true);
+      return;
+    }
+
+    const startDownload = async () => {
+      try {
+        setDownloadStatus("downloading");
+        setStatusMessage("Starting download...");
+
+        // Trigger background download
+        const response = await axios.post(`/api/proxy?path=download`, null, {
+          params: {
+            url: `https://open.spotify.com/track/${trackId}`,
+            async: "true"
+          }
+        });
+
+        if (response.data.status === "started") {
+          // Start polling
+          pollInterval.current = setInterval(checkProgress, 1000);
+        } else if (response.data.status === "success") {
+          // Already cached (race condition or fast response)
+          finishDownload();
+        }
+      } catch (error) {
+        console.error("Download start error:", error);
+        setStatusMessage("Download failed to start.");
+        setDownloadStatus("error");
+      }
+    };
+
+    startDownload();
+
+    return () => {
+      if (pollInterval.current) clearInterval(pollInterval.current);
+    };
+  }, [trackId, initialCached]);
+
+  const checkProgress = async () => {
+    // If already cached, don't continue polling
+    if (pollInterval.current === null) return;
+
+    try {
+      const res = await axios.get(`/api/proxy?path=download/progress`, {
+        params: { track_id: trackId }
+      });
+
+      const { progress: prog, status, message } = res.data;
+      setProgress(prog);
+      setStatusMessage(message || status);
+
+      if (status === "Done" || prog >= 100) {
+        // Stop polling FIRST before state update
+        if (pollInterval.current) {
+          clearInterval(pollInterval.current);
+          pollInterval.current = null;
+        }
+        finishDownload();
+      } else if (status === "Error") {
+        if (pollInterval.current) {
+          clearInterval(pollInterval.current);
+          pollInterval.current = null;
+        }
+        setDownloadStatus("error");
+      }
+    } catch (err) {
+      console.error("Polling error:", err);
+    }
+  };
+
+  const finishDownload = () => {
+    // Double-check interval is stopped
+    if (pollInterval.current) {
+      clearInterval(pollInterval.current);
+      pollInterval.current = null;
+    }
+    setDownloadStatus("cached");
+    setStatusMessage("Ready to play!");
+    setPlaying(true);
+  };
 
   // 🕓 Update seek every 500ms
   useEffect(() => {
     let timer;
-    if (playing && !isSeeking) {
+    if (playing && !isSeeking && downloadStatus === "cached") {
       timer = setInterval(() => {
         if (playerRef.current) {
           const current = playerRef.current.seek();
@@ -27,7 +119,7 @@ export default function Player({ songData, mainColor = "#888" }) {
       }, 500);
     }
     return () => clearInterval(timer);
-  }, [playing, isSeeking]);
+  }, [playing, isSeeking, downloadStatus]);
 
   // 🎵 Set duration when loaded
   const handleLoad = () => {
@@ -65,8 +157,31 @@ export default function Player({ songData, mainColor = "#888" }) {
     return `${minutes}:${seconds < 10 ? "0" : ""}${seconds}`;
   };
 
+  if (downloadStatus === "error") {
+    return (
+      <div className="flex flex-col items-center justify-center h-[50vh] text-red-500">
+        <h2 className="text-2xl font-bold mb-4">Error loading song</h2>
+        <p>{statusMessage}</p>
+      </div>
+    )
+  }
+
   return (
-    <div className="flex flex-col lg:flex-row gap-8 lg:gap-12">
+    <div className="flex flex-col lg:flex-row gap-8 lg:gap-12 relative">
+      {/* ⬇️ Download Overlay */}
+      {downloadStatus === "downloading" && (
+        <div className="absolute inset-0 z-50 bg-black/80 backdrop-blur-sm flex flex-col items-center justify-center rounded-2xl">
+          <div className="w-16 h-16 border-4 border-purple-500 border-t-transparent rounded-full animate-spin mb-6"></div>
+          <h2 className="text-3xl font-bold text-white mb-2">{Math.round(progress)}%</h2>
+          <p className="text-xl text-gray-300 animate-pulse">{statusMessage}</p>
+          <div className="w-64 h-2 bg-gray-700 rounded-full mt-6 overflow-hidden">
+            <div
+              className="h-full bg-purple-500 transition-all duration-300 ease-out"
+              style={{ width: `${progress}%` }}
+            />
+          </div>
+        </div>
+      )}
       {/* Album Art */}
       <div className="lg:w-2/5 flex justify-center">
         <div className="relative w-full max-w-md">
@@ -88,15 +203,17 @@ export default function Player({ songData, mainColor = "#888" }) {
           <p className="text-lg text-gray-500">{album}</p>
         </div>
 
-        {/* Audio engine */}
-        <ReactHowler
-          src={songUrl}
-          playing={playing}
-          html5={true}
-          volume={muted ? 0 : volume}
-          ref={playerRef}
-          onLoad={handleLoad}
-        />
+        {/* Audio engine - Only load when cached/ready to prevent premature stream requests */}
+        {downloadStatus === "cached" && (
+          <ReactHowler
+            src={songUrl}
+            playing={playing}
+            html5={true}
+            volume={muted ? 0 : volume}
+            ref={playerRef}
+            onLoad={handleLoad}
+          />
+        )}
 
         {/* Seekbar */}
         <div className="flex flex-col items-center mt-4">
