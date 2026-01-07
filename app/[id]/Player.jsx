@@ -324,7 +324,7 @@ export default function Player({ songData, mainColor = "#888", initialCached = f
             {/* Download */}
             <a
               href={downloadUrl}
-              download
+              download={`${artist} - ${title}.mp3`}
               className="p-2 rounded-full text-gray-300 hover:text-white hover:bg-gray-700 transition-colors"
               aria-label="Download song"
             >

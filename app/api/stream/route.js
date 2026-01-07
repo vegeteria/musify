@@ -70,7 +70,9 @@ export async function GET(request) {
 
         // Set filename for download (Artist - Title.mp3)
         const downloadFilename = `${song.artist} - ${song.name}.mp3`;
-        headers.set('Content-Disposition', `inline; filename="${downloadFilename}"`);
+        // Use attachment for download, inline for streaming
+        const disposition = request.headers.get('X-Download') === 'true' ? 'attachment' : 'inline';
+        headers.set('Content-Disposition', `${disposition}; filename="${downloadFilename}"`);
 
         // Copy relevant headers from Flask response
         const contentLength = fileResponse.headers.get('Content-Length');
