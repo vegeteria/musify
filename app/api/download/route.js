@@ -92,17 +92,32 @@ export async function POST(request) {
         // Acquire lock
         downloadLocks.add(trackId);
 
-        // Get download link from SpotiDLX
+
+
         // Get download link from SpotiDLX directly to avoid self-referencing SSL issues
         const spotifyUrl = `https://open.spotify.com/track/${trackId}`;
-        const spotmateRes = await fetch(`https://spoti-dlx.vercel.app/api/spotmate?url=${encodeURIComponent(spotifyUrl)}`, {
-            headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-            },
-        });
-        const spotmateData = await spotmateRes.json();
+        console.log(`[Download] Fetching info from SpotiDLX for: ${spotifyUrl}`);
 
-        if (!spotmateRes.ok || spotmateData.status !== 'success' || !spotmateData.download_link) {
+        let spotmateData;
+        try {
+            const spotmateRes = await fetch(`https://spoti-dlx.vercel.app/api/spotmate?url=${encodeURIComponent(spotifyUrl)}`, {
+                headers: {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                },
+            });
+
+            if (!spotmateRes.ok) throw new Error(`SpotiDLX API returned ${spotmateRes.status}`);
+
+            spotmateData = await spotmateRes.json();
+            console.log('[Download] SpotiDLX success. Link:', spotmateData.download_link);
+        } catch (err) {
+            console.error('[Download] SpotiDLX fetch error:', err);
+            downloadProgress.set(trackId, { progress: 0, status: 'error', error: 'Failed to access SpotiDLX API' });
+            downloadLocks.delete(trackId);
+            return NextResponse.json({ error: 'Failed to access SpotiDLX API' }, { status: 500 });
+        }
+
+        if (spotmateData.status !== 'success' || !spotmateData.download_link) {
             downloadProgress.set(trackId, { progress: 0, status: 'error', error: 'Failed to get download link' });
             return NextResponse.json({ error: 'Failed to get download link' }, { status: 500 });
         }
@@ -136,6 +151,7 @@ async function downloadFile(trackId, downloadLink) {
     const tempPath = path.join(DOWNLOAD_DIR, `${trackId}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}.tmp`);
 
     try {
+        console.log(`[Download] File start: ${downloadLink}`);
         const response = await fetch(downloadLink, {
             headers: {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
