@@ -1,5 +1,5 @@
 import Card from "../Card"
-import searchTrack from "../../lib/Spotify"
+import searchTrack from "../lib/Spotify"
 
 
 export default async function SearchPage({ searchParams }) {
