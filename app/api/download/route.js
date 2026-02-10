@@ -93,9 +93,13 @@ export async function POST(request) {
         downloadLocks.add(trackId);
 
         // Get download link from SpotiDLX
+        // Get download link from SpotiDLX directly to avoid self-referencing SSL issues
         const spotifyUrl = `https://open.spotify.com/track/${trackId}`;
-        const baseUrl = process.env.BASE_URL || 'http://localhost:3000';
-        const spotmateRes = await fetch(`${baseUrl}/api/spotmate?url=${encodeURIComponent(spotifyUrl)}`);
+        const spotmateRes = await fetch(`https://spoti-dlx.vercel.app/api/spotmate?url=${encodeURIComponent(spotifyUrl)}`, {
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            },
+        });
         const spotmateData = await spotmateRes.json();
 
         if (!spotmateRes.ok || spotmateData.status !== 'success' || !spotmateData.download_link) {
