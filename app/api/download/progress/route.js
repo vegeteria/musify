@@ -1,7 +1,5 @@
 import { NextResponse } from 'next/server';
-
-// Access the same global progress map used by the download route
-const downloadProgress = globalThis.__downloadProgress || new Map();
+import { getProgress } from '../../../lib/progress';
 
 export async function GET(request) {
     try {
@@ -12,7 +10,7 @@ export async function GET(request) {
             return NextResponse.json({ error: 'Missing trackId parameter' }, { status: 400 });
         }
 
-        const progress = downloadProgress.get(trackId);
+        const progress = getProgress(trackId);
 
         if (!progress) {
             return NextResponse.json({
