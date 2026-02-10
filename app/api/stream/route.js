@@ -1,5 +1,8 @@
 import { NextResponse } from 'next/server';
-import axios from 'axios';
+import fs from 'fs';
+import path from 'path';
+
+const DOWNLOAD_DIR = path.join(process.cwd(), '.musify-cache');
 
 export async function GET(request) {
     try {
@@ -10,84 +13,74 @@ export async function GET(request) {
             return NextResponse.json({ error: 'Missing trackId parameter' }, { status: 400 });
         }
 
-        const apiUrl = process.env.SPOTDL_API_URL || 'http://localhost:5000';
+        const filePath = path.join(DOWNLOAD_DIR, `${trackId}.mp3`);
 
-        // 1. Check cache to get song info including path/filename
-        const searchResponse = await axios.get(`${apiUrl}/api/search`, {
-            params: { query: `https://open.spotify.com/track/${trackId}` }
-        });
-
-        if (!searchResponse.data.songs || searchResponse.data.songs.length === 0) {
-            return NextResponse.json({ error: 'Song not found' }, { status: 404 });
+        if (!fs.existsSync(filePath)) {
+            return NextResponse.json({ error: 'File not found. Song may not be downloaded yet.' }, { status: 404 });
         }
 
-        let song = searchResponse.data.songs[0];
+        const stat = fs.statSync(filePath);
+        const fileSize = stat.size;
 
-        if (!song.cached) {
-            // Song not in cache - trigger download first
-            try {
-                const downloadResponse = await axios.post(`${apiUrl}/api/download`, null, {
-                    params: { url: `https://open.spotify.com/track/${trackId}` }
-                });
-
-                if (downloadResponse.data.status !== 'success') {
-                    return NextResponse.json({ error: 'Download failed' }, { status: 500 });
-                }
-
-                song = {
-                    ...song,
-                    cached: true,
-                    file_path: downloadResponse.data.file_path
-                };
-            } catch (downloadError) {
-                console.error('Auto-download failed:', downloadError);
-                return NextResponse.json({ error: 'Failed to download song' }, { status: 500 });
-            }
-        }
-
-        const filename = song.file_path.split('/').pop();
-        const fileUrl = `${apiUrl}/api/file/${encodeURIComponent(filename)}`;
-
-        // Support Range requests for seeking
         const rangeHeader = request.headers.get('range');
-        const requestHeaders = {};
 
         if (rangeHeader) {
-            // Forward Range header to Flask backend
-            requestHeaders['Range'] = rangeHeader;
+            // Parse Range header: "bytes=start-end"
+            const parts = rangeHeader.replace(/bytes=/, '').split('-');
+            const start = parseInt(parts[0], 10);
+            const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
+
+            if (start >= fileSize || end >= fileSize || start > end) {
+                return new NextResponse(null, {
+                    status: 416,
+                    headers: {
+                        'Content-Range': `bytes */${fileSize}`,
+                    },
+                });
+            }
+
+            const chunkSize = end - start + 1;
+            const fileStream = fs.createReadStream(filePath, { start, end });
+
+            // Convert Node.js ReadStream to Web ReadableStream
+            const webStream = new ReadableStream({
+                start(controller) {
+                    fileStream.on('data', (chunk) => controller.enqueue(chunk));
+                    fileStream.on('end', () => controller.close());
+                    fileStream.on('error', (err) => controller.error(err));
+                },
+            });
+
+            return new NextResponse(webStream, {
+                status: 206,
+                headers: {
+                    'Content-Type': 'audio/mpeg',
+                    'Content-Length': chunkSize.toString(),
+                    'Content-Range': `bytes ${start}-${end}/${fileSize}`,
+                    'Accept-Ranges': 'bytes',
+                    'Cache-Control': 'no-cache',
+                },
+            });
         }
 
-        // Fetch from Flask with range support
-        const fileResponse = await fetch(fileUrl, { headers: requestHeaders });
+        // Full file response (no Range header)
+        const fileStream = fs.createReadStream(filePath);
+        const webStream = new ReadableStream({
+            start(controller) {
+                fileStream.on('data', (chunk) => controller.enqueue(chunk));
+                fileStream.on('end', () => controller.close());
+                fileStream.on('error', (err) => controller.error(err));
+            },
+        });
 
-        if (!fileResponse.ok && fileResponse.status !== 206) {
-            return NextResponse.json({ error: 'Failed to fetch audio file' }, { status: fileResponse.status });
-        }
-
-        const headers = new Headers();
-        headers.set('Content-Type', 'audio/mpeg');
-        headers.set('Accept-Ranges', 'bytes');
-
-        // Set filename for download (Artist - Title.mp3)
-        const downloadFilename = `${song.artist} - ${song.name}.mp3`;
-        // Use attachment for download, inline for streaming
-        const disposition = request.headers.get('X-Download') === 'true' ? 'attachment' : 'inline';
-        headers.set('Content-Disposition', `${disposition}; filename="${downloadFilename}"`);
-
-        // Copy relevant headers from Flask response
-        const contentLength = fileResponse.headers.get('Content-Length');
-        const contentRange = fileResponse.headers.get('Content-Range');
-
-        if (contentLength) {
-            headers.set('Content-Length', contentLength);
-        }
-        if (contentRange) {
-            headers.set('Content-Range', contentRange);
-        }
-
-        return new NextResponse(fileResponse.body, {
-            status: fileResponse.status, // 200 or 206
-            headers: headers
+        return new NextResponse(webStream, {
+            status: 200,
+            headers: {
+                'Content-Type': 'audio/mpeg',
+                'Content-Length': fileSize.toString(),
+                'Accept-Ranges': 'bytes',
+                'Cache-Control': 'no-cache',
+            },
         });
 
     } catch (error) {

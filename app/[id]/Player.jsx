@@ -1,17 +1,15 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import ReactHowler from "react-howler";
 
-import axios from "axios";
-
-export default function Player({ songData, mainColor = "#888", initialCached = false, trackId }) {
-  const { songUrl, downloadUrl, title, artist, album, artwork } = songData;
+export default function Player({ songData, mainColor = "#888", trackId }) {
+  const { title, artist, album, artwork } = songData;
 
   const [playing, setPlaying] = useState(false);
-  const [downloadStatus, setDownloadStatus] = useState(initialCached ? "cached" : "idle");
-  const [progress, setProgress] = useState(0);
-  const [statusMessage, setStatusMessage] = useState("");
+  const [downloadStatus, setDownloadStatus] = useState("idle"); // idle | downloading | done | error
+  const [downloadProgress, setDownloadProgress] = useState(0);
+  const [downloadMessage, setDownloadMessage] = useState("");
 
   const [seek, setSeek] = useState(0);
   const [duration, setDuration] = useState(0);
@@ -21,96 +19,142 @@ export default function Player({ songData, mainColor = "#888", initialCached = f
 
   const playerRef = useRef(null);
   const pollInterval = useRef(null);
+  const isMounted = useRef(true);
+  const downloadStartTime = useRef(0);
 
-  // 🚀 Start Download process if not cached
+  const songUrl = `/api/stream?trackId=${trackId}`;
+  const downloadUrl = `/api/stream?trackId=${trackId}`;
+
+  // Start download on mount
   useEffect(() => {
-    if (initialCached) {
-      setDownloadStatus("cached");
-      setPlaying(true);
-      return;
-    }
+    isMounted.current = true;
 
     const startDownload = async () => {
       try {
         setDownloadStatus("downloading");
-        setStatusMessage("Starting download...");
+        setDownloadMessage("Starting download...");
+        setDownloadProgress(0);
+        downloadStartTime.current = Date.now();
 
-        // Trigger background download
-        const response = await axios.post(`/api/proxy?path=download`, null, {
-          params: {
-            url: `https://open.spotify.com/track/${trackId}`,
-            async: "true"
-          }
+        const response = await fetch(`/api/download?trackId=${trackId}`, {
+          method: "POST",
         });
+        const data = await response.json();
 
-        if (response.data.status === "started") {
-          // Start polling
-          pollInterval.current = setInterval(checkProgress, 1000);
-        } else if (response.data.status === "success") {
-          // Already cached (race condition or fast response)
-          finishDownload();
+        if (!isMounted.current) return;
+
+        if (data.status === "cached") {
+          // Already downloaded and fresh
+          setDownloadStatus("done");
+          setDownloadProgress(100);
+          setDownloadMessage("Ready to play!");
+          setPlaying(true);
+          return;
+        }
+
+        if (data.status === "started" || data.status === "already_downloading") {
+          // Clear any existing interval to prevent leaks
+          if (pollInterval.current) {
+            clearInterval(pollInterval.current);
+          }
+          // Start polling for progress
+          pollInterval.current = setInterval(checkProgress, 500);
+        } else if (data.error) {
+          setDownloadStatus("error");
+          setDownloadMessage(data.error);
         }
       } catch (error) {
         console.error("Download start error:", error);
-        setStatusMessage("Download failed to start.");
-        setDownloadStatus("error");
+        if (isMounted.current) {
+          setDownloadStatus("error");
+          setDownloadMessage("Failed to start download.");
+        }
       }
     };
 
     startDownload();
 
     return () => {
-      if (pollInterval.current) clearInterval(pollInterval.current);
+      isMounted.current = false;
+      if (pollInterval.current) {
+        clearInterval(pollInterval.current);
+        pollInterval.current = null;
+      }
     };
-  }, [trackId, initialCached]);
+  }, [trackId]);
 
   const checkProgress = async () => {
-    // If already cached, don't continue polling
-    if (pollInterval.current === null) return;
+    if (!isMounted.current) {
+      // Component unmounted, stop polling
+      if (pollInterval.current) {
+        clearInterval(pollInterval.current);
+        pollInterval.current = null;
+      }
+      return;
+    }
 
     try {
-      const res = await axios.get(`/api/proxy?path=download/progress`, {
-        params: { track_id: trackId }
-      });
+      const res = await fetch(`/api/download/progress?trackId=${trackId}`);
+      const data = await res.json();
 
-      const { progress: prog, status, message } = res.data;
-      setProgress(prog);
-      setStatusMessage(message || status);
+      if (!isMounted.current) return;
 
-      if (status === "Done" || prog >= 100) {
-        // Stop polling FIRST before state update
+      setDownloadProgress(data.progress || 0);
+
+      // If download hasn't started yet (race condition), keep showing "Starting download..."
+      // unless it's been waiting too long (> 10 seconds)
+      if (data.status === "not_started") {
+        if (Date.now() - downloadStartTime.current > 10000) {
+          setDownloadStatus("error");
+          setDownloadMessage("Download timed out.");
+          if (pollInterval.current) {
+            clearInterval(pollInterval.current);
+            pollInterval.current = null;
+          }
+          return;
+        }
+        setDownloadMessage("Starting download...");
+      } else {
+        setDownloadMessage(data.message || data.status || "");
+      }
+
+      if (data.status === "done") {
         if (pollInterval.current) {
           clearInterval(pollInterval.current);
           pollInterval.current = null;
         }
-        finishDownload();
-      } else if (status === "Error") {
+        setDownloadProgress(100);
+        setDownloadMessage("Ready to play!");
+
+        // Small delay to ensure file is fully written to disk
+        setTimeout(() => {
+          if (isMounted.current) {
+            setDownloadStatus("done");
+            setPlaying(true);
+          }
+        }, 500);
+      } else if (data.status === "error") {
         if (pollInterval.current) {
           clearInterval(pollInterval.current);
           pollInterval.current = null;
         }
         setDownloadStatus("error");
+        setDownloadMessage(data.error || "Download failed");
       }
     } catch (err) {
-      console.error("Polling error:", err);
+      console.error("Progress poll error:", err);
+      // Stop polling on error
+      if (pollInterval.current) {
+        clearInterval(pollInterval.current);
+        pollInterval.current = null;
+      }
     }
   };
 
-  const finishDownload = () => {
-    // Double-check interval is stopped
-    if (pollInterval.current) {
-      clearInterval(pollInterval.current);
-      pollInterval.current = null;
-    }
-    setDownloadStatus("cached");
-    setStatusMessage("Ready to play!");
-    setPlaying(true);
-  };
-
-  // 🕓 Update seek every 500ms
+  // Update seek every 500ms
   useEffect(() => {
     let timer;
-    if (playing && !isSeeking && downloadStatus === "cached") {
+    if (playing && !isSeeking && downloadStatus === "done") {
       timer = setInterval(() => {
         if (playerRef.current) {
           const current = playerRef.current.seek();
@@ -121,7 +165,7 @@ export default function Player({ songData, mainColor = "#888", initialCached = f
     return () => clearInterval(timer);
   }, [playing, isSeeking, downloadStatus]);
 
-  // 🎵 Set duration when loaded
+  // Set duration when loaded
   const handleLoad = () => {
     if (playerRef.current) {
       const dur = playerRef.current.duration();
@@ -129,7 +173,13 @@ export default function Player({ songData, mainColor = "#888", initialCached = f
     }
   };
 
-  // ⏩ Handle seeking
+  const handleLoadError = (id, error) => {
+    console.error("Audio load error:", error);
+    setDownloadStatus("error");
+    setDownloadMessage("Failed to load audio. Please try again.");
+  };
+
+  // Handle seeking
   const handleSeekChange = (e) => {
     setSeek(parseFloat(e.target.value));
     setIsSeeking(true);
@@ -142,14 +192,14 @@ export default function Player({ songData, mainColor = "#888", initialCached = f
     setIsSeeking(false);
   };
 
-  // 🔊 Handle volume
+  // Handle volume
   const handleVolumeChange = (e) => {
     const newVol = parseFloat(e.target.value);
     setVolume(newVol);
     if (muted && newVol > 0) setMuted(false);
   };
 
-  // 🧠 Helper
+  // Format time helper
   const formatTime = (secs) => {
     if (!secs) return "0:00";
     const minutes = Math.floor(secs / 60);
@@ -157,31 +207,72 @@ export default function Player({ songData, mainColor = "#888", initialCached = f
     return `${minutes}:${seconds < 10 ? "0" : ""}${seconds}`;
   };
 
+  // Retry handler
+  const handleRetry = () => {
+    setDownloadStatus("idle");
+    setDownloadProgress(0);
+    setDownloadMessage("");
+    // Re-trigger download
+    const restart = async () => {
+      try {
+        setDownloadStatus("downloading");
+        setDownloadMessage("Retrying download...");
+        const response = await fetch(`/api/download?trackId=${trackId}`, {
+          method: "POST",
+        });
+        const data = await response.json();
+        if (data.status === "cached") {
+          setDownloadStatus("done");
+          setDownloadProgress(100);
+          setPlaying(true);
+        } else if (data.status === "started" || data.status === "already_downloading") {
+          pollInterval.current = setInterval(checkProgress, 500);
+        } else {
+          setDownloadStatus("error");
+          setDownloadMessage(data.error || "Download failed");
+        }
+      } catch (err) {
+        setDownloadStatus("error");
+        setDownloadMessage("Failed to retry download.");
+      }
+    };
+    restart();
+  };
+
   if (downloadStatus === "error") {
     return (
       <div className="flex flex-col items-center justify-center h-[50vh] text-red-500">
         <h2 className="text-2xl font-bold mb-4">Error loading song</h2>
-        <p>{statusMessage}</p>
+        <p className="mb-4">{downloadMessage}</p>
+        <button
+          onClick={handleRetry}
+          className="px-6 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-full transition-colors"
+        >
+          Retry
+        </button>
       </div>
-    )
+    );
   }
 
   return (
     <div className="flex flex-col lg:flex-row gap-8 lg:gap-12 relative">
-      {/* ⬇️ Download Overlay */}
+      {/* Download Progress Overlay */}
       {downloadStatus === "downloading" && (
         <div className="absolute inset-0 z-50 bg-black/80 backdrop-blur-sm flex flex-col items-center justify-center rounded-2xl">
           <div className="w-16 h-16 border-4 border-purple-500 border-t-transparent rounded-full animate-spin mb-6"></div>
-          <h2 className="text-3xl font-bold text-white mb-2">{Math.round(progress)}%</h2>
-          <p className="text-xl text-gray-300 animate-pulse">{statusMessage}</p>
+          <h2 className="text-3xl font-bold text-white mb-2">
+            {Math.round(downloadProgress)}%
+          </h2>
+          <p className="text-xl text-gray-300 animate-pulse">{downloadMessage}</p>
           <div className="w-64 h-2 bg-gray-700 rounded-full mt-6 overflow-hidden">
             <div
               className="h-full bg-purple-500 transition-all duration-300 ease-out"
-              style={{ width: `${progress}%` }}
+              style={{ width: `${downloadProgress}%` }}
             />
           </div>
         </div>
       )}
+
       {/* Album Art */}
       <div className="lg:w-2/5 flex justify-center">
         <div className="relative w-full max-w-md">
@@ -203,15 +294,17 @@ export default function Player({ songData, mainColor = "#888", initialCached = f
           <p className="text-lg text-gray-500">{album}</p>
         </div>
 
-        {/* Audio engine - Only load when cached/ready to prevent premature stream requests */}
-        {downloadStatus === "cached" && (
+        {/* Audio engine - only load when download is complete */}
+        {downloadStatus === "done" && (
           <ReactHowler
             src={songUrl}
             playing={playing}
             html5={true}
+            format={["mp3"]}
             volume={muted ? 0 : volume}
             ref={playerRef}
             onLoad={handleLoad}
+            onLoadError={handleLoadError}
           />
         )}
 
@@ -227,9 +320,7 @@ export default function Player({ songData, mainColor = "#888", initialCached = f
             onMouseUp={handleSeekCommit}
             onTouchEnd={handleSeekCommit}
             className="w-full cursor-pointer"
-            style={{
-              accentColor: mainColor,
-            }}
+            style={{ accentColor: mainColor }}
           />
           <div className="flex justify-between w-full text-gray-400 text-sm mt-1">
             <span>{formatTime(seek)}</span>
@@ -244,8 +335,10 @@ export default function Player({ songData, mainColor = "#888", initialCached = f
             {/* Rewind 10s */}
             <button
               onClick={() => {
-                const current = playerRef.current.seek();
-                playerRef.current.seek(Math.max(0, current - 10));
+                if (playerRef.current) {
+                  const current = playerRef.current.seek();
+                  playerRef.current.seek(Math.max(0, current - 10));
+                }
               }}
               className="p-2 rounded-full text-gray-300 hover:text-white hover:bg-gray-700 transition-colors"
               aria-label="Rewind 10 seconds"
@@ -260,7 +353,7 @@ export default function Player({ songData, mainColor = "#888", initialCached = f
             <button
               onClick={() => setPlaying(!playing)}
               className="rounded-full bg-white text-black p-3 mx-2 shadow-lg hover:scale-105 transition-transform"
-              aria-label={playing ? 'Pause' : 'Play'}
+              aria-label={playing ? "Pause" : "Play"}
             >
               {playing ? (
                 <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8" viewBox="0 0 24 24" fill="currentColor">
@@ -276,8 +369,10 @@ export default function Player({ songData, mainColor = "#888", initialCached = f
             {/* Forward 10s */}
             <button
               onClick={() => {
-                const current = playerRef.current.seek();
-                playerRef.current.seek(Math.min(duration, current + 10));
+                if (playerRef.current) {
+                  const current = playerRef.current.seek();
+                  playerRef.current.seek(Math.min(duration, current + 10));
+                }
               }}
               className="p-2 rounded-full text-gray-300 hover:text-white hover:bg-gray-700 transition-colors"
               aria-label="Forward 10 seconds"
@@ -296,7 +391,7 @@ export default function Player({ songData, mainColor = "#888", initialCached = f
               <button
                 onClick={() => setMuted(!muted)}
                 className="p-2 rounded-full text-gray-300 hover:text-white hover:bg-gray-700 transition-colors"
-                aria-label={muted ? 'Unmute' : 'Mute'}
+                aria-label={muted ? "Unmute" : "Mute"}
               >
                 {muted || volume === 0 ? (
                   <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" viewBox="0 0 24 24" fill="currentColor">
